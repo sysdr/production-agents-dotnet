@@ -85,7 +85,7 @@ var sqledge = builder.AddContainer("sqledge",
 
 var serviceBusEmulator = builder.AddContainer("servicebus-emulator",
         "mcr.microsoft.com/azure-messaging/servicebus-emulator",
-        "latest")
+        "2.0.1") // pinned: the tag Aspire 17 ships with
     .WithEndpoint(port: 5672, targetPort: 5672, name: "amqp")
     .WithBindMount("../../config/servicebus-config.json",
         "/ServiceBus_Emulator/ConfigFiles/Config.json", isReadOnly: true)
@@ -99,7 +99,7 @@ var serviceBusEmulator = builder.AddContainer("servicebus-emulator",
 
 var azurite = builder.AddContainer("azurite",
         "mcr.microsoft.com/azure-storage/azurite",
-        "latest")
+        "3.37.0") // pinned
     .WithArgs("azurite", "--blobHost", "0.0.0.0", "--queueHost", "0.0.0.0", "--tableHost", "0.0.0.0", "--skipApiVersionCheck")
     // isProxied: false — bind host 10000-10002 so UseDevelopmentStorage=true works
     .WithEndpoint(port: 10000, targetPort: 10000, name: "blob", isProxied: false)
@@ -108,7 +108,7 @@ var azurite = builder.AddContainer("azurite",
 
 var eventHubsEmulator = builder.AddContainer("eventhubs-emulator",
         "mcr.microsoft.com/azure-messaging/eventhubs-emulator",
-        "latest")
+        "2.2.1") // pinned: the tag Aspire 17 ships with
     .WithEndpoint(port: 5673, targetPort: 5672, scheme: "tcp", name: "amqp-eh")
     .WithBindMount("../../config/eventhubs-config.json",
         "/Eventhubs_Emulator/ConfigFiles/Config.json", isReadOnly: true)
