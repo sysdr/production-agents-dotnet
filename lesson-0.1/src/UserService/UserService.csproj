@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>UserService</RootNamespace>
+    <AssemblyName>UserService</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- ServiceDefaults carries all OTel and health check wiring.
+         No direct OTel NuGet references needed here. -->
+    <ProjectReference Include="..\ServiceDefaults\ServiceDefaults.csproj" />
+    <!-- POST 20 NEW: JWT token generation — UserService /auth/token mints test tokens.
+         Same signing key as OrderService JwtBearer validation configuration.
+         Production: token issuance is handled by Azure AD / Entra ID, not the application. -->
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- POST 26: Integration tests run against real Docker containers.
+         Docker must be running when executing these tests.
+         Tests use Testcontainers to start/stop containers automatically.
+         No mocks — the same Azurite image used in local development runs in tests. -->
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- xUnit — the standard test framework for .NET since .NET Core 1.0 -->
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+
+    <!-- POST 26 NEW: Testcontainers.Azurite — typed container for Azurite (Blob + Table).
+         Starts the official mcr.microsoft.com/azure-storage/azurite image.
+         Exposes port-mapped connection strings compatible with Azure SDK clients.
+         Same image used in docker-compose.yml — tests match local development exactly. -->
+    <PackageReference Include="Testcontainers.Azurite" />
+
+    <!-- Logging — Microsoft.Extensions.Logging.Abstractions for ILogger<T> in tests -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+
+    <!-- Azure SDKs — same versions as the services under test -->
+    <PackageReference Include="Azure.Data.Tables" />
+    <PackageReference Include="Azure.Storage.Blobs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Reference the services under test — no mocks needed.
+         The real TenantConfigStore and OrderBlobStore classes are tested directly.
+         Testcontainers provides the real Azurite backing store. -->
+    <ProjectReference Include="..\..\src\OrderService\OrderService.csproj" />
+    <ProjectReference Include="..\..\src\OrderProcessor\OrderProcessor.csproj" />
+    <ProjectReference Include="..\..\src\Contracts\Contracts.csproj" />
+  </ItemGroup>
+</Project>

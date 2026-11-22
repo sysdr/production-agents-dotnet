@@ -1,0 +1,215 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-08-01-preview/Microsoft.Portal/dashboard.json#",
+  "contentVersion": "1.0.0.0",
+  "_comment": "SRE Dashboard — Hyperscale Log Monitoring · Post 23 · distrib-dotnet.substack.com",
+  "_description": "Aggregates the four golden signals (latency, traffic, errors, saturation) from App Insights, Service Bus, and Event Hubs into a single operational view.",
+  "_deploy": "az resource create --resource-group YOUR_RG --resource-type Microsoft.Portal/dashboards --name hyperscale-sre-dashboard --properties @docs/sre-dashboard.json",
+  "_import": "Azure Portal → Dashboard → Upload · paste this JSON",
+
+  "type": "Microsoft.Portal/dashboards",
+  "name": "hyperscale-sre-dashboard",
+  "location": "[resourceGroup().location]",
+  "tags": {
+    "hidden-title": "Hyperscale Log Monitoring — SRE",
+    "series": "distrib-dotnet.substack.com",
+    "post": "23"
+  },
+
+  "properties": {
+    "lenses": {
+      "0": {
+        "order": 0,
+        "parts": {
+
+          "0": {
+            "_comment": "Tile 1: p99 latency — orders/create last 1 hour",
+            "_golden_signal": "LATENCY",
+            "_alert_threshold": "> 1000ms for 5 consecutive minutes",
+            "position": { "x": 0, "y": 0, "colSpan": 6, "rowSpan": 4 },
+            "metadata": {
+              "type": "Extension/AppInsightsExtension/PartType/AnalyticsPart",
+              "inputs": [
+                {
+                  "name": "ComponentId",
+                  "value": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/YOUR_RG/providers/microsoft.insights/components/YOUR_APP_INSIGHTS"
+                },
+                {
+                  "name": "Query",
+                  "value": "requests\n| where timestamp > ago(1h)\n| where name has 'orders/create'\n| summarize p99=percentile(duration,99), p50=percentile(duration,50)\n  by bin(timestamp, 5m)\n| render timechart"
+                },
+                { "name": "TimeRange", "value": "PT1H" },
+                { "name": "ChartType", "value": 2 },
+                { "name": "Title", "value": "p99 Latency — /orders/create" }
+              ]
+            }
+          },
+
+          "1": {
+            "_comment": "Tile 2: Error rate — all services last 1 hour",
+            "_golden_signal": "ERRORS",
+            "_alert_threshold": "> 1% for 5 consecutive minutes",
+            "position": { "x": 6, "y": 0, "colSpan": 6, "rowSpan": 4 },
+            "metadata": {
+              "type": "Extension/AppInsightsExtension/PartType/AnalyticsPart",
+              "inputs": [
+                {
+                  "name": "ComponentId",
+                  "value": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/YOUR_RG/providers/microsoft.insights/components/YOUR_APP_INSIGHTS"
+                },
+                {
+                  "name": "Query",
+                  "value": "requests\n| where timestamp > ago(1h)\n| summarize Total=count(), Errors=countif(success==false)\n  by cloud_RoleName, bin(timestamp, 5m)\n| extend ErrorRate = round(100.0*Errors/Total, 2)\n| render timechart"
+                },
+                { "name": "TimeRange", "value": "PT1H" },
+                { "name": "ChartType", "value": 2 },
+                { "name": "Title", "value": "Error Rate by Service" }
+              ]
+            }
+          },
+
+          "2": {
+            "_comment": "Tile 3: Order volume — traffic signal last 1 hour",
+            "_golden_signal": "TRAFFIC",
+            "_alert_threshold": "< 10% of baseline for 15 consecutive minutes (traffic drop indicates upstream issue)",
+            "position": { "x": 0, "y": 4, "colSpan": 6, "rowSpan": 4 },
+            "metadata": {
+              "type": "Extension/AppInsightsExtension/PartType/AnalyticsPart",
+              "inputs": [
+                {
+                  "name": "ComponentId",
+                  "value": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/YOUR_RG/providers/microsoft.insights/components/YOUR_APP_INSIGHTS"
+                },
+                {
+                  "name": "Query",
+                  "value": "requests\n| where timestamp > ago(1h)\n| where name has 'orders/create'\n| summarize Count=count() by bin(timestamp, 5m)\n| render columnchart"
+                },
+                { "name": "TimeRange", "value": "PT1H" },
+                { "name": "ChartType", "value": 4 },
+                { "name": "Title", "value": "Order Volume — /orders/create (5m buckets)" }
+              ]
+            }
+          },
+
+          "3": {
+            "_comment": "Tile 4: DLQ depth — saturation signal",
+            "_golden_signal": "SATURATION",
+            "_alert_threshold": "> 0 for 5 consecutive minutes (see sentinel-detection-rules.md Rule 3)",
+            "position": { "x": 6, "y": 4, "colSpan": 3, "rowSpan": 4 },
+            "metadata": {
+              "type": "Extension/AppInsightsExtension/PartType/AnalyticsPart",
+              "inputs": [
+                {
+                  "name": "ComponentId",
+                  "value": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/YOUR_RG/providers/microsoft.insights/components/YOUR_APP_INSIGHTS"
+                },
+                {
+                  "name": "Query",
+                  "value": "traces\n| where timestamp > ago(1h)\n| where message has 'DLQ non-empty'\n| extend DLQ=toint(customDimensions.DeadLetterCount)\n| summarize MaxDLQ=max(DLQ) by bin(timestamp, 5m)\n| render timechart"
+                },
+                { "name": "TimeRange", "value": "PT1H" },
+                { "name": "Title", "value": "Service Bus DLQ Depth" }
+              ]
+            }
+          },
+
+          "4": {
+            "_comment": "Tile 5: Polly retry rate — leading indicator for saturation",
+            "_golden_signal": "SATURATION",
+            "_alert_threshold": "> 5 retries per minute for 10 consecutive minutes",
+            "position": { "x": 9, "y": 4, "colSpan": 3, "rowSpan": 4 },
+            "metadata": {
+              "type": "Extension/AppInsightsExtension/PartType/AnalyticsPart",
+              "inputs": [
+                {
+                  "name": "ComponentId",
+                  "value": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/YOUR_RG/providers/microsoft.insights/components/YOUR_APP_INSIGHTS"
+                },
+                {
+                  "name": "Query",
+                  "value": "traces\n| where timestamp > ago(1h)\n| where message has 'Retrying order processing'\n| summarize RetryCount=count() by bin(timestamp, 5m)\n| render timechart"
+                },
+                { "name": "TimeRange", "value": "PT1H" },
+                { "name": "Title", "value": "Polly Retry Rate" }
+              ]
+            }
+          },
+
+          "5": {
+            "_comment": "Tile 6: Exception count by type — exception summary last 24 hours",
+            "_golden_signal": "ERRORS",
+            "_alert_threshold": "New exception type appearing that was not present yesterday",
+            "position": { "x": 0, "y": 8, "colSpan": 6, "rowSpan": 4 },
+            "metadata": {
+              "type": "Extension/AppInsightsExtension/PartType/AnalyticsPart",
+              "inputs": [
+                {
+                  "name": "ComponentId",
+                  "value": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/YOUR_RG/providers/microsoft.insights/components/YOUR_APP_INSIGHTS"
+                },
+                {
+                  "name": "Query",
+                  "value": "exceptions\n| where timestamp > ago(24h)\n| summarize Count=count() by type, cloud_RoleName\n| order by Count desc\n| take 10"
+                },
+                { "name": "TimeRange", "value": "PT24H" },
+                { "name": "Title", "value": "Top 10 Exceptions (24h)" }
+              ]
+            }
+          },
+
+          "6": {
+            "_comment": "Tile 7: Dependency latency — SB and EH send times",
+            "_golden_signal": "LATENCY",
+            "_alert_threshold": "SB send > 500ms p99 for 5 minutes (indicates SB throttling)",
+            "position": { "x": 6, "y": 8, "colSpan": 6, "rowSpan": 4 },
+            "metadata": {
+              "type": "Extension/AppInsightsExtension/PartType/AnalyticsPart",
+              "inputs": [
+                {
+                  "name": "ComponentId",
+                  "value": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/YOUR_RG/providers/microsoft.insights/components/YOUR_APP_INSIGHTS"
+                },
+                {
+                  "name": "Query",
+                  "value": "dependencies\n| where timestamp > ago(1h)\n| where type in ('Azure Service Bus', 'Azure Event Hubs')\n| summarize p99=percentile(duration,99) by type, bin(timestamp, 5m)\n| render timechart"
+                },
+                { "name": "TimeRange", "value": "PT1H" },
+                { "name": "Title", "value": "p99 Dependency Latency — SB and EH" }
+              ]
+            }
+          },
+
+          "7": {
+            "_comment": "Tile 8: Tenant order rate — business metric",
+            "_golden_signal": "TRAFFIC",
+            "_note": "Not a four-golden-signal metric — included for business context. Sudden drop in one tenant = tenant-specific issue.",
+            "position": { "x": 0, "y": 12, "colSpan": 12, "rowSpan": 4 },
+            "metadata": {
+              "type": "Extension/AppInsightsExtension/PartType/AnalyticsPart",
+              "inputs": [
+                {
+                  "name": "ComponentId",
+                  "value": "/subscriptions/SUBSCRIPTION_ID/resourceGroups/YOUR_RG/providers/microsoft.insights/components/YOUR_APP_INSIGHTS"
+                },
+                {
+                  "name": "Query",
+                  "value": "requests\n| where timestamp > ago(6h)\n| where name has 'orders/create'\n| where success == true\n| extend TenantId = tostring(customDimensions.TenantId)\n| summarize Count=count() by TenantId, bin(timestamp, 15m)\n| render timechart"
+                },
+                { "name": "TimeRange", "value": "PT6H" },
+                { "name": "Title", "value": "Order Rate by Tenant (6h)" }
+              ]
+            }
+          }
+        }
+      }
+    },
+
+    "metadata": {
+      "model": {
+        "timeRange": {
+          "value": { "relative": { "duration": 1, "timeUnit": 1 } },
+          "type": "MsPortalFx.Composition.Configuration.ValueTypes.TimeRange"
+        }
+      }
+    }
+  }
+}

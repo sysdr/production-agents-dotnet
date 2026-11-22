@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AppHost/AppHost.csproj" />
+    <Project Path="src/Contracts/Contracts.csproj" />
+    <Project Path="src/OrderEventProcessor/OrderEventProcessor.csproj" />
+    <Project Path="src/OrderProcessor/OrderProcessor.csproj" />
+    <Project Path="src/OrderService/OrderService.csproj" />
+    <Project Path="src/ServiceDefaults/ServiceDefaults.csproj" />
+    <Project Path="src/UserService/UserService.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IntegrationTests/IntegrationTests.csproj" />
+    <Project Path="tests/LoadTests/LoadTests.csproj" />
+  </Folder>
+</Solution>

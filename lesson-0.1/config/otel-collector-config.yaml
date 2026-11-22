@@ -1,0 +1,150 @@
+# config/otel-collector-config.yaml
+# CUMULATIVE — Post 36 adds tail_sampling processor for cost optimisation.
+# Post 1:  OTLP receiver + logging exporter
+# Post 3:  batch processor + memory_limiter
+# Post 32: azuredataexplorer exporter (dual-export)
+# Post 36: tail_sampling processor on traces pipeline — 100% errors, 10% success
+
+# POST 36: This config requires the OTel Collector CONTRIB image, which
+# includes the tailsamplingprocessor extension.
+# docker-compose.yml updated to use otel/opentelemetry-collector-contrib:latest
+#
+# COST MATH (why sampling matters):
+#   200 RPS × 86400s × 30d = 518M spans/month
+#   ~1 KB per span compressed → ~518 GB/month into ADX
+#   With tail sampling (10% success, 100% errors, ~1% error rate):
+#     Error spans:   200 × 0.01 × 86400 × 30 =   5.2M spans (100% kept)
+#     Success sample: 200 × 0.99 × 0.10 × 86400 × 30 = 51.3M spans (10% sample)
+#     Total: 56.5M spans/month — 89% reduction in ADX ingestion volume
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+    spike_limit_mib: 50
+
+  batch:
+    timeout: 1s
+    send_batch_size: 512
+
+  resource:
+    attributes:
+      - key:    deployment.environment
+        value:  "${ASPNETCORE_ENVIRONMENT}"
+        action: upsert
+
+  # POST 36: Tail-based sampling with two policies.
+  # Tail sampling buffers each trace for decision_wait seconds, then decides.
+  # Because it sees the COMPLETE trace, it can make decisions based on outcome
+  # (error status, duration) rather than guessing at request start.
+  #
+  # BRIDGE FROM FAMILIAR:
+  #   Azure Application Insights Adaptive Sampling is the managed equivalent.
+  #   It targets a fixed volume (default: 5 items/second) and adjusts the
+  #   sampling rate dynamically. tail_sampling gives explicit control over
+  #   WHICH requests to keep, not just HOW MANY.
+  #
+  # HEAD vs TAIL:
+  #   Head sampling (probabilistic_sampler):
+  #     Decision at request START. Fast. But samples errors and successes equally.
+  #     10% sampling loses 90% of your errors too — wrong for production.
+  #
+  #   Tail sampling (this config):
+  #     Decision at request END. Sees the full outcome.
+  #     Always keep errors. Sample successes. Optimal for cost + fidelity.
+  tail_sampling:
+    # decision_wait: how long to buffer spans before deciding.
+    # Must be longer than the longest expected request duration.
+    # At 200 RPS with p99 ~800ms (Post 27), 10s is very conservative.
+    decision_wait: 10s
+
+    # num_traces: max traces buffered simultaneously during decision_wait.
+    # At 200 RPS × 10s decision window = 2000 in-flight traces.
+    # Set higher than your worst-case concurrent trace count.
+    num_traces: 10000
+
+    expected_new_traces_per_sec: 200
+
+    policies:
+      # Policy 1: ALWAYS keep traces containing at least one error span.
+      # StatusCode=Error means the request failed — these are the traces
+      # you need for debugging and post-mortems. Never sample them.
+      - name: keep-all-errors
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+
+      # Policy 2: Keep traces with slow spans (latency > 500ms).
+      # The p99 investigation at 200 RPS (Post 27/28) requires the slow traces.
+      # Without this policy, sampling would lose the very traces that explain
+      # latency spikes.
+      - name: keep-slow-traces
+        type: latency
+        latency:
+          threshold_ms: 500
+
+      # Policy 3: Sample 10% of remaining (successful, fast) traces.
+      # POST 36: 10% keeps enough volume for representative p50/p99 estimation
+      # while reducing ADX ingestion by ~87% for the happy path.
+      # Tune upward (20-30%) if p99 estimates become noisy at low RPS windows.
+      - name: sample-successful
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+
+exporters:
+  logging:
+    verbosity: detailed
+
+  debug:
+    verbosity: basic
+
+  # Local Aspire/docker-compose: ADX exporter omitted — unset ADX_* env vars make
+  # clusterURI mandatory validation fail and crash the collector. Enable in production
+  # by restoring the azuredataexplorer block and adding it back to pipelines below.
+  # azuredataexplorer:
+  #   cluster_uri:         "${ADX_CLUSTER_URI}"
+  #   application_id:      "${ADX_APP_ID}"
+  #   application_key:     "${ADX_APP_KEY}"
+  #   tenant_id:           "${ADX_TENANT_ID}"
+  #   db_name:             "telemetry"
+  #   metrics_table_name:  "OTelMetrics"
+  #   logs_table_name:     "OTelLogs"
+  #   traces_table_name:   "OTelTraces"
+  #   ingestion_type:      "queued"
+
+extensions:
+  zpages:
+    endpoint: 0.0.0.0:55679
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check, zpages]
+  pipelines:
+    # POST 36: tail_sampling is applied to traces only.
+    # Sampling traces reduces the dominant cost (span volume) by ~89%.
+    # Metrics and logs are NOT sampled — they are already aggregated
+    # (metrics: counters/histograms) or low-volume (logs: only warnings/errors).
+    traces:
+      receivers:  [otlp]
+      processors: [memory_limiter, resource, tail_sampling, batch]
+      exporters:  [logging, debug]
+
+    metrics:
+      receivers:  [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters:  [logging, debug]
+
+    logs:
+      receivers:  [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters:  [logging, debug]

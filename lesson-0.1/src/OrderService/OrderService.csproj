@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ServiceDefaults/ServiceDefaults.csproj" />
+    <!-- POST 7 NEW: Contracts + Azure Service Bus SDK -->
+    <ProjectReference Include="../Contracts/Contracts.csproj" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" />
+    <!-- POST 12 NEW: Event Hubs SDK — dual publish to SB queue + EH stream -->
+    <PackageReference Include="Azure.Messaging.EventHubs" />
+    <!-- POST 17 NEW: Azure Table Storage SDK — per-tenant configuration via Azurite Table service.
+         Same Azurite container as Blob (Post 16) — port 10002 for Table endpoint. -->
+    <PackageReference Include="Azure.Data.Tables" />
+    <!-- POST 20 NEW: JWT Bearer authentication — validates bearer tokens on protected endpoints.
+         Production: swap the symmetric SigningKey for Azure AD / Entra ID OIDC discovery.
+         Local dev: symmetric key in appsettings.Development.json, no Azure subscription needed.
+         Microsoft.Identity.Web wraps JwtBearer for Azure AD — the same configuration section applies.
+         See: https://learn.microsoft.com/en-us/azure/active-directory/develop/microsoft-identity-web -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!-- POST 21: Microsoft.Identity.Web — production upgrade from local symmetric JWT.
+         Wraps JwtBearer with Azure AD OIDC discovery. Swaps AddJwtAuth() for
+         AddMicrosoftIdentityWebApiAuthentication(). No code change in handlers or policies.
+         Only the NuGet reference and the configuration section (Jwt → AzureAd) change. -->
+    <PackageReference Include="Microsoft.Identity.Web" />
+    <!-- POST 24 NEW: Dapr.AspNetCore — DaprClient DI and InvokeMethodAsync for service invocation. -->
+    <PackageReference Include="Dapr.AspNetCore" />
+    <!-- POST 37: Polly resilience pipeline for Service Bus primary→fallback routing -->
+    <PackageReference Include="Polly.Core" />
+    <!-- POST 28: IMemoryCache extensions used by TenantConfigStore -->
+  </ItemGroup>
+</Project>

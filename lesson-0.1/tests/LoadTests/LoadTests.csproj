@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- POST 27: NBomber load tests run as a console application — not as xUnit tests.
+         A console app gives full control over the load plan and report output path.
+         Run with: dotnet run (project tests/LoadTests) [orderServiceUrl=http://localhost:PORT] -->
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- POST 27 NEW: NBomber 6 — the .NET-native load testing library.
+         Scenarios define user behaviour. Load simulations define the request rate.
+         Reports exported as HTML, Markdown, and CSV to docs/nbomber-report/.
+         No external service needed — all load generation is in-process. -->
+    <PackageReference Include="NBomber" />
+    <!-- NBomberCurl-style HTTP client plugin — typed HTTP scenario builder -->
+    <PackageReference Include="NBomber.Http" />
+    <!-- System.Text.Json for token request serialisation -->
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+</Project>

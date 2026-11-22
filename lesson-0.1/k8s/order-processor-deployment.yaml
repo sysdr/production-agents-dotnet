@@ -1,0 +1,77 @@
+# k8s/order-processor-deployment.yaml — POST 31
+# The OrderProcessor Deployment that KEDA scales.
+#
+# BRIDGE FROM FAMILIAR:
+#   A Kubernetes Deployment is the cloud equivalent of a Windows Service
+#   running under NSSM or a .NET Worker Service hosted in Azure App Service
+#   with an always-on setting. The Deployment ensures N replicas are always
+#   running, restarts crashed pods, and rolls out new images without downtime.
+#
+# KEDA controls the replica count via the ScaledObject (see order-processor-scaledobject.yaml).
+# The Deployment's spec.replicas field is managed by KEDA — do not set it manually
+# once the ScaledObject is active; KEDA's HorizontalPodAutoscaler will override it.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-processor
+  namespace: orders
+  labels:
+    app: order-processor
+    app.kubernetes.io/part-of: hyperscale-log-monitoring
+spec:
+  # POST 31: Do NOT set replicas here when KEDA manages scaling.
+  # KEDA creates an HPA that overrides this value at runtime.
+  # Initial value (before first KEDA evaluation): 1 (from minReplicaCount in ScaledObject).
+  selector:
+    matchLabels:
+      app: order-processor
+  template:
+    metadata:
+      labels:
+        app: order-processor
+    spec:
+      containers:
+        - name: order-processor
+          image: YOUR_REGISTRY.azurecr.io/order-processor:latest
+          # POST 31: Resource requests and limits are required for HPA to function.
+          # KEDA's HPA uses these to decide how many pods fit on each node.
+          # At 200 RPS (Post 27), order-processor consumed ~0.3 CPU cores and ~200MB RAM.
+          # Set requests below observed usage — pods can burst to limits.
+          resources:
+            requests:
+              cpu:    "250m"    # 0.25 cores — consistent with dotnet-counters baseline (Post 28)
+              memory: "256Mi"
+            limits:
+              cpu:    "500m"
+              memory: "512Mi"
+          env:
+            - name:  ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name:  ServiceBus__ConnectionString
+              valueFrom:
+                secretKeyRef:
+                  name: order-processor-secrets
+                  key:  sb-connection-string
+            - name:  Storage__ConnectionString
+              valueFrom:
+                secretKeyRef:
+                  name: order-processor-secrets
+                  key:  storage-connection-string
+          # POST 31: Liveness and readiness probes.
+          # Liveness: restart the pod if /health stops responding (deadlock, OOM).
+          # Readiness: stop sending work to the pod until /health returns 200.
+          # Without readiness, a booting pod receives Service Bus messages before
+          # its connection pool is warm — first messages see high latency.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds:       20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds:       10

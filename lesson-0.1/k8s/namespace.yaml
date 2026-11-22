@@ -1,0 +1,9 @@
+# k8s/namespace.yaml — POST 31
+# Kubernetes namespace for the hyperscale-log-monitoring workloads.
+# All AKS resources in this series live in this namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: orders
+  labels:
+    app.kubernetes.io/part-of: hyperscale-log-monitoring

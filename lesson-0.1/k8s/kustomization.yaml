@@ -1,0 +1,20 @@
+# k8s/kustomization.yaml — POST 31
+# Kustomize manifest — applies all K8s resources in the correct order.
+#
+# Apply with: kubectl apply -k k8s/
+# Kustomize resolves the dependency order: namespace → secrets → deployment → scaledobject
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: orders
+
+resources:
+  - namespace.yaml
+  - order-processor-deployment.yaml
+  - order-processor-scaledobject.yaml
+
+# POST 31: commonLabels added to all resources — enables kubectl get all -l part-of=...
+commonLabels:
+  app.kubernetes.io/part-of: hyperscale-log-monitoring
+  app.kubernetes.io/managed-by: kustomize

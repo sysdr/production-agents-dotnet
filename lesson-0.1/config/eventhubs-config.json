@@ -1,0 +1,27 @@
+{
+  "UserConfig": {
+    "NamespaceConfig": [
+      {
+        "Type": "EventHub",
+        "Name": "emulatorns1",
+        "Entities": [
+          {
+            "Name": "order-events",
+            "PartitionCount": "4",
+            "ConsumerGroups": [
+              {
+                "Name": "order-processor"
+              },
+              {
+                "Name": "audit-log"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "LoggingConfig": {
+      "Type": "File"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ServiceDefaults/ServiceDefaults.csproj" />
+    <ProjectReference Include="../Contracts/Contracts.csproj" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" />
+    <!-- POST 10 NEW: Microsoft.Extensions.Http.Resilience
+         Provides ResiliencePipelineBuilder (for any code) and
+         AddStandardResilienceHandler() (for HttpClient).
+         Includes Polly 8.x as a transitive dependency. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <!-- POST 16 NEW: Azure Blob Storage SDK — writes processed order records to Azurite.
+         Same package used by OrderEventProcessor for Event Hubs checkpoint storage (Post 13).
+         Shared dependency; Azurite already running on port 10000. -->
+    <PackageReference Include="Azure.Storage.Blobs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,90 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "_comment": "Azure Blob Storage lifecycle management policy for the processed-orders container.",
+  "_usage": "Apply via: az storage account management-policy create --account-name YOUR_ACCOUNT --policy @docs/blob-lifecycle-policy.json",
+  "_local_note": "Azurite does not enforce lifecycle policies — this JSON defines the production rule.",
+  "_series_post": "Post 17 · Distributed Systems with .NET",
+
+  "rules": [
+    {
+      "name": "tier-processed-orders-cool",
+      "_comment": "Move blobs to Cool tier after 30 days. Cool = lower storage cost, slightly higher access cost.",
+      "_cost_note": "Cool tier: ~50% of Hot tier storage cost. 30-day minimum retention. Ideal for blobs accessed < once per month.",
+      "enabled": true,
+      "type": "Lifecycle",
+      "definition": {
+        "filters": {
+          "blobTypes": ["blockBlob"],
+          "prefixMatch": ["processed-orders/"]
+        },
+        "actions": {
+          "baseBlob": {
+            "tierToCool": {
+              "daysAfterModificationGreaterThan": 30
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "tier-old-months-to-archive",
+      "_comment": "Move blobs older than 365 days to Archive tier. Archive = lowest cost, retrieval takes hours.",
+      "_cost_note": "Archive tier: ~80% of Cool tier storage cost. Retrieval requires rehydration (Standard: 1-15 hours, High: 1 hour). Use for compliance data not expected to be accessed.",
+      "enabled": true,
+      "type": "Lifecycle",
+      "definition": {
+        "filters": {
+          "blobTypes": ["blockBlob"],
+          "prefixMatch": ["processed-orders/"]
+        },
+        "actions": {
+          "baseBlob": {
+            "tierToArchive": {
+              "daysAfterModificationGreaterThan": 365
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "delete-ancient-orders",
+      "_comment": "Delete blobs older than 2555 days (~7 years). Adjust to match your data retention policy.",
+      "_legal_note": "Check your jurisdiction's financial record retention requirements before reducing below 7 years.",
+      "enabled": true,
+      "type": "Lifecycle",
+      "definition": {
+        "filters": {
+          "blobTypes": ["blockBlob"],
+          "prefixMatch": ["processed-orders/"]
+        },
+        "actions": {
+          "baseBlob": {
+            "delete": {
+              "daysAfterModificationGreaterThan": 2555
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "delete-old-checkpoints",
+      "_comment": "Event Hubs checkpoint blobs (Post 13) older than 7 days are stale.",
+      "_rationale": "EventProcessorClient rewrites checkpoints on every processed event. A checkpoint blob older than 7 days indicates a partition that has had no events — safe to clean up.",
+      "enabled": true,
+      "type": "Lifecycle",
+      "definition": {
+        "filters": {
+          "blobTypes": ["blockBlob"],
+          "prefixMatch": ["eh-checkpoints/"]
+        },
+        "actions": {
+          "baseBlob": {
+            "delete": {
+              "daysAfterModificationGreaterThan": 7
+            }
+          }
+        }
+      }
+    }
+  ]
+}

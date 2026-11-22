@@ -1,0 +1,164 @@
+# .github/workflows/ci-cd.yml — POST 30
+# Runs on every push to main (i.e., every merged PR).
+# Pipeline: test → build images → push to ACR → deploy Bicep
+#
+# AUTHENTICATION: OIDC federated identity (no long-lived secrets)
+#   The azure/login action exchanges a short-lived GitHub OIDC token for an
+#   Azure access token. No CLIENT_SECRET stored in GitHub Secrets.
+#   Setup: az ad app federated-credential create (one-time, see docs/ci-cd-setup.md)
+#
+# REQUIRED GITHUB SECRETS:
+#   AZURE_CLIENT_ID        — App registration client ID
+#   AZURE_TENANT_ID        — Azure AD tenant ID
+#   AZURE_SUBSCRIPTION_ID  — Target subscription
+#   AZURE_RESOURCE_GROUP   — e.g. rg-orders-prod
+#   ACR_SERVER             — e.g. myregistry.azurecr.io
+#   ACR_NAME               — e.g. myregistry
+#   JWT_SIGNING_KEY        — The @secure() param from infra/main.bicep (Post 29)
+
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+
+# POST 30: concurrency — prevents two deployments running simultaneously.
+# If a second push to main arrives while the first pipeline is still in the
+# deploy job, the first pipeline is cancelled. The newest commit always wins.
+#
+# BRIDGE FROM FAMILIAR: Azure DevOps has "Lock behaviour: Sequential" on deployment
+# stages. GitHub Actions concurrency: cancel-in-progress is more aggressive —
+# it actively kills the in-progress run rather than queuing it.
+#
+# WHY THIS MATTERS: Without concurrency control, two parallel deployments can
+# race — the older image tag can overwrite the newer one in Container Apps
+# if the deploy jobs complete out of order.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# POST 30: Image tag = Git commit SHA (40 hex chars).
+# WHY NOT 'latest': the 'latest' tag is mutable — any push overwrites it.
+# If a deployment fails and you need to roll back, 'latest' points to the
+# broken image. A SHA tag is immutable — you always know exactly which code
+# is in production, and az deployment group create --parameters imageTag=<SHA>
+# rolls back to any prior commit deterministically.
+env:
+  IMAGE_TAG:  ${{ github.sha }}
+  REGISTRY:   ${{ secrets.ACR_SERVER }}
+
+jobs:
+  # ── Job 1: Test ────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          cache: true
+
+      - run: dotnet restore
+
+      - run: dotnet test --configuration Release
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+
+  # ── Job 2: Build and push images ───────────────────────────────────────
+  build-push:
+    name: Build · Push
+    runs-on: ubuntu-latest
+    needs: test   # POST 30: only build if tests pass
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # POST 30: OIDC login — no CLIENT_SECRET, short-lived token only.
+      # The federated credential is configured in Azure AD to trust tokens
+      # issued by github.com for this repo's main branch.
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ secrets.ACR_NAME }}
+
+      # POST 30: Each service is its own Docker image, tagged with the Git SHA.
+      # The Dockerfile is in the service directory — standard .NET Dockerfile pattern.
+      - name: Build and push order-service
+        run: |
+          docker build \
+            -t $REGISTRY/order-service:$IMAGE_TAG \
+            -f src/OrderService/Dockerfile \
+            --label "git-commit=${{ github.sha }}" \
+            --label "build-date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            .
+          docker push $REGISTRY/order-service:$IMAGE_TAG
+
+      - name: Build and push order-processor
+        run: |
+          docker build \
+            -t $REGISTRY/order-processor:$IMAGE_TAG \
+            -f src/OrderProcessor/Dockerfile \
+            .
+          docker push $REGISTRY/order-processor:$IMAGE_TAG
+
+      - name: Build and push user-service
+        run: |
+          docker build \
+            -t $REGISTRY/user-service:$IMAGE_TAG \
+            -f src/UserService/Dockerfile \
+            .
+          docker push $REGISTRY/user-service:$IMAGE_TAG
+
+  # ── Job 3: Deploy via Bicep ────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build-push
+    # POST 30: environment: production adds a required-reviewer gate in GitHub.
+    # No one can deploy to production without approval from a designated reviewer.
+    # Configured in Settings → Environments → production → Required reviewers.
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Bicep
+        run: az bicep install
+
+      # POST 30: Deploy the Post 29 Bicep with the current Git SHA as imageTag.
+      # --parameters imageTag=${{ github.sha }} overrides the 'latest' default
+      # in parameters.bicepparam — this is the connection between Post 29 and Post 30.
+      # ARM deployment is idempotent: re-running with the same SHA is a no-op.
+      - name: Deploy Bicep
+        run: |
+          az deployment group create \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --template-file  infra/main.bicep \
+            --parameters     infra/parameters.bicepparam \
+            --parameters     imageTag=${{ github.sha }} \
+            --parameters     containerRegistryServer=${{ secrets.ACR_SERVER }} \
+            --parameters     jwtSigningKey=${{ secrets.JWT_SIGNING_KEY }} \
+            --name           "deploy-${{ github.sha }}"
+
+      # POST 30: Output the deployed service URLs for the run summary.
+      - name: Show deployment outputs
+        run: |
+          az deployment group show \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name "deploy-${{ github.sha }}" \
+            --query "properties.outputs" \
+            --output table

@@ -1,0 +1,73 @@
+# k8s/order-service-deployment.yaml
+# POST 31: OrderService Deployment — the HTTP API that creates orders.
+# Exposed via a Kubernetes Service of type LoadBalancer (or Ingress in production).
+# JWT auth (Post 20), TenantAuthorizationHandler (Post 21), IMemoryCache (Post 28).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: hyperscale
+  labels:
+    app: order-service
+spec:
+  replicas: 2   # static scaling; KEDA not used (HTTP traffic, not queue depth)
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+      annotations:
+        dapr.io/enabled: "true"
+        dapr.io/app-id:  "order-service"
+        dapr.io/app-port: "8080"
+    spec:
+      containers:
+        - name: order-service
+          image: hyperscaleacr.azurecr.io/order-service:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: Jwt__SigningKey
+              valueFrom:
+                secretKeyRef:
+                  name: hyperscale-secrets
+                  key: jwt-signing-key
+            - name: Jwt__Issuer
+              value: "hyperscale-prod"
+            - name: Jwt__Audience
+              value: "order-service"
+            - name: ConnectionStrings__sb
+              valueFrom:
+                secretKeyRef:
+                  name: hyperscale-secrets
+                  key: sb-connection-string
+            - name: ConnectionStrings__storage
+              valueFrom:
+                secretKeyRef:
+                  name: hyperscale-secrets
+                  key: storage-connection-string
+          resources:
+            requests: { cpu: "200m", memory: "256Mi" }
+            limits:   { cpu: "1000m", memory: "1Gi"  }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+# POST 31: Service — exposes OrderService within the cluster.
+# IngressController (nginx, Azure Application Gateway) handles external traffic.
+# The /orders/create endpoint is authenticated (Post 20) so LoadBalancer exposure is safe.
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: hyperscale
+spec:
+  selector:
+    app: order-service
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP

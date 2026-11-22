@@ -1,0 +1,104 @@
+# k8s/order-processor-scaledobject.yaml — POST 31
+# KEDA ScaledObject: scales OrderProcessor replicas based on Service Bus queue depth.
+#
+# HOW IT WORKS:
+#   KEDA installs a custom controller in AKS. Every pollingInterval seconds,
+#   it queries the Service Bus management API for the active message count
+#   in the 'orders' queue. It then tells the Kubernetes HPA to set
+#   replicas = ceil(activeMessageCount / messageCount).
+#
+# EXAMPLE:
+#   0 messages  → 1 replica  (minReplicaCount — never zero, no cold start)
+#   5 messages  → 1 replica  (ceil(5/5) = 1, at capacity)
+#   6 messages  → 2 replicas (ceil(6/5) = 2, scale out)
+#   50 messages → 10 replicas (ceil(50/5) = 10, hits maxReplicaCount)
+#   51 messages → 10 replicas (capped at maxReplicaCount)
+#
+# BRIDGE FROM FAMILIAR:
+#   Azure App Service "Scale out (App Service plan)" with a Service Bus
+#   queue depth rule is the PaaS equivalent. KEDA gives the same behaviour
+#   on AKS, with full control over the scaling math and cooldown period.
+#   Windows Services have no native autoscaling — this is the cloud-native pattern
+#   that replaces "buy a bigger VM when the queue fills up".
+
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: order-processor-scaler
+  namespace: orders
+spec:
+  scaleTargetRef:
+    name: order-processor    # matches the Deployment name above
+
+  # POST 31: pollingInterval — how often KEDA checks the queue depth.
+  # 15 seconds balances responsiveness vs Service Bus management API call cost.
+  # Lower values (e.g. 5s) react faster but generate more API traffic.
+  pollingInterval: 15
+
+  # POST 31: cooldownPeriod — seconds KEDA waits after the queue drains
+  # before scaling DOWN. 300 seconds = 5 minutes.
+  #
+  # WHY 5 MINUTES:
+  #   Traffic to order systems is bursty — a lull between bursts can be brief.
+  #   Scaling down immediately and then back up wastes pod startup time (~15s per pod)
+  #   and creates the "thrashing" pattern: scale down → burst arrives → cold start latency.
+  #   5 minutes absorbs typical inter-burst gaps and keeps pods warm.
+  #   In production, tune this to 2× your typical inter-burst gap.
+  cooldownPeriod: 300
+
+  # POST 31: minReplicaCount: 1 — NEVER scale to zero for message processors.
+  #
+  # WHY NOT ZERO:
+  #   minReplicaCount: 0 reduces cost to zero when the queue is empty (appealing).
+  #   But when the next message arrives, Kubernetes must schedule a new pod,
+  #   pull the container image (~10s), initialise the .NET runtime (~5s),
+  #   warm the IMemoryCache and connection pool (~3s). Total cold start: ~18-30 seconds.
+  #   During cold start, the message sits unprocessed in the queue.
+  #   With minReplicaCount: 1, one pod is always warm. Cold start = 0 seconds.
+  #   The cost of one idle pod ($15-40/month on a Standard_D2s_v3 node) is worth
+  #   the latency guarantee.
+  minReplicaCount: 1
+  maxReplicaCount: 10         # matches Bicep Container Apps maxReplicas (Post 29)
+
+  triggers:
+    - type: azure-servicebus
+      metadata:
+        # POST 31: messageCount is the target messages per replica.
+        # At messageCount: 5, one replica handles up to 5 queued messages.
+        # This is NOT the processing rate — it is the queue depth threshold.
+        # Tune this based on your average processing time:
+        #   If processing takes 100ms, one replica can process 10 msgs/s.
+        #   If arrival rate is 50 msgs/s, you need 5 replicas (50/10).
+        #   messageCount: 5 means KEDA scales to 5 replicas when 25 messages queue up.
+        messageCount:       "5"
+        queueName:          orders
+        namespace:          YOUR_SERVICEBUS_NAMESPACE
+        # POST 31: connectionFromEnv — read the SB connection string from a pod env var.
+        # This avoids storing the connection string in the ScaledObject YAML (which is
+        # stored in etcd, the Kubernetes configuration store — treat it like a log file).
+        connectionFromEnv:  ServiceBus__ConnectionString
+
+      # POST 31: authenticationRef — references a TriggerAuthentication object that
+      # holds the Service Bus connection string as a Kubernetes Secret reference.
+      # This is the KEDA equivalent of Bicep's @secure() (Post 29) —
+      # the credential is stored in a K8s Secret, not in the ScaledObject YAML.
+      authenticationRef:
+        name: order-processor-trigger-auth
+---
+# TriggerAuthentication — tells KEDA how to authenticate to Service Bus
+# for reading queue depth metrics.
+#
+# POST 31: secretTargetRef points to a Kubernetes Secret (order-processor-secrets).
+# The Secret holds the Service Bus connection string.
+# In production with AKS Workload Identity, replace this with a Managed Identity
+# reference — no connection string stored anywhere.
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: order-processor-trigger-auth
+  namespace: orders
+spec:
+  secretTargetRef:
+    - parameter:  connection
+      name:       order-processor-secrets   # K8s Secret name
+      key:        sb-connection-string      # key within the Secret

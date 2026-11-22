@@ -1,0 +1,18 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
+  <!--
+    Aspire 13 AppHost (upgraded in Lesson 0.1). Dapr hosting comes from CommunityToolkit.Aspire.Hosting.Dapr.
+    The SDK pulls in Aspire.Hosting.AppHost automatically.
+  -->
+  
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>aspire-post-01-dev-sandbox</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\UserService\UserService.csproj" />
+    <ProjectReference Include="..\OrderService\OrderService.csproj" />
+    <ProjectReference Include="..\OrderProcessor\OrderProcessor.csproj" />
+    <ProjectReference Include="..\OrderEventProcessor\OrderEventProcessor.csproj" />
+    <PackageReference Include="CommunityToolkit.Aspire.Hosting.Dapr" />
+  </ItemGroup>
+</Project>

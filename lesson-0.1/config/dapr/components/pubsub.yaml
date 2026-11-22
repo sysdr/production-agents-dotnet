@@ -1,0 +1,31 @@
+# config/dapr/components/pubsub.yaml
+# POST 25: Dapr pub/sub component configuration.
+#
+# LOCAL DEVELOPMENT: Uses Redis as the pub/sub backing store.
+# Redis is the default Dapr local development component (started by dapr init).
+#
+# PRODUCTION: Replace redis metadata with Azure Service Bus:
+#   - name: namespaceName
+#     value: "YOUR_NAMESPACE.servicebus.windows.net"
+#   - name: azureClientId   (for Managed Identity)
+#     value: "MANAGED_IDENTITY_CLIENT_ID"
+#
+# One configuration file change. No code change.
+# The Dapr SDK calls (PublishEventAsync, Subscribe) remain identical.
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: order-pubsub
+  namespace: default
+spec:
+  type: pubsub.redis
+  version: v1
+  metadata:
+  - name: redisHost
+    value: "localhost:6379"
+  - name: redisPassword
+    value: ""
+  - name: enableTLS
+    value: "false"
+  - name: concurrency
+    value: "1"

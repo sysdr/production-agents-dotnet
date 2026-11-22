@@ -1,0 +1,83 @@
+# .github/workflows/pr-checks.yml — POST 30
+# Runs on every pull request targeting main.
+# BLOCKS MERGE if: tests fail OR Bicep is invalid.
+#
+# BRIDGE FROM FAMILIAR:
+#   Azure DevOps Pipeline (azure-pipelines.yml) is the Microsoft-native equivalent.
+#   GitHub Actions uses YAML with the same trigger/job/step model.
+#   Key difference: GitHub Actions uses "jobs.<id>.needs" for sequencing;
+#   Azure DevOps uses "dependsOn". The concepts are identical.
+#
+# WHAT THIS PROTECTS:
+#   1. dotnet test — catches regressions in Testcontainers (Post 26) and unit tests
+#   2. az bicep build — catches syntax errors in infra/ before they reach production
+#   No Azure subscription needed for either check.
+
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+  # POST 30: Also run on pushes to feature branches for early feedback
+  push:
+    branches-ignore: [main]
+
+jobs:
+  test-and-validate:
+    name: Test · Bicep Validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          # POST 30: cache: true restores the NuGet package cache between runs.
+          # Reduces restore time from ~90s to ~10s after the first run.
+          cache: true
+
+      - name: Restore packages
+        run: dotnet restore
+
+      - name: Build (Release)
+        run: dotnet build --no-restore --configuration Release
+
+      # POST 30: Run tests — includes Testcontainers integration tests (Post 26).
+      # Testcontainers starts a real Azurite container during CI — no mock needed.
+      # The runner must have Docker available. ubuntu-latest runners have Docker pre-installed.
+      - name: Test
+        run: |
+          dotnet test \
+            --no-build \
+            --configuration Release \
+            --logger "trx;LogFileName=results.trx" \
+            --results-directory test-results/
+        env:
+          # POST 30: Testcontainers uses the Docker socket. Ryuk container reaper
+          # may fail on some CI runners — TESTCONTAINERS_RYUK_DISABLED disables it.
+          TESTCONTAINERS_RYUK_DISABLED: "true"
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        # POST 30: always() ensures results upload even when tests fail.
+        # The TRX file shows exactly which test failed and why.
+        if: always()
+        with:
+          name: test-results-${{ github.run_number }}
+          path: test-results/
+
+      # POST 30: Validate Bicep — no subscription required.
+      # az bicep build compiles infra/main.bicep to ARM JSON.
+      # If any module reference, parameter type, or resource API version is wrong,
+      # this step fails and blocks the PR merge.
+      - name: Install Bicep CLI
+        run: az bicep install
+
+      - name: Validate Bicep
+        run: az bicep build --file infra/main.bicep
+
+      - name: Bicep lint
+        run: az bicep lint --file infra/main.bicep
