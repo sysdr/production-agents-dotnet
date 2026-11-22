@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DlqTriage/DlqTriage.csproj" />
+    <Project Path="src/DlqTriage.Cli/DlqTriage.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DlqTriage.Tests/DlqTriage.Tests.csproj" />
+  </Folder>
+</Solution>

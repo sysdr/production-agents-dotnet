@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DlqTriage/DlqTriage.csproj" />
+    <PackageReference Include="OllamaSharp" Version="5.5.2" />
+  </ItemGroup>
+</Project>
