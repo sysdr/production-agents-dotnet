@@ -111,10 +111,10 @@ Both workflows now use `dotnet-version: '10.0.x'`.
 
 ## Exercise
 
-1. Pin the two emulator images to explicit version tags instead of `latest`, then re-run the stack.
+1. The emulator images are pinned in `src/AppHost/Program.cs`. Check for a newer tag of each, bump one, re-run the stack, and note what changed.
 2. Run `dotnet list package --outdated` and `dotnet list package --vulnerable`, and explain each result.
 3. Stretch: target `net11.0` (STS) in a branch and record what else breaks.
 
 ## Next lesson
 
-**Lesson 0.2: Your first agent with Microsoft Agent Framework 1.0** adds an `OrderAssistant` agent on top of this upgraded system.
+**Lesson 0.2: Aspire as your local platform** runs this same stack from one AppHost, then Lesson 0.3 moves the settlement logic to C# 15 unions.
