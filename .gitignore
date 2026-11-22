@@ -1,0 +1,37 @@
+## .NET build outputs
+**/bin/
+**/obj/
+**/TestResults/
+**/test-results/
+**/artifacts/
+
+## IDE / OS
+.vs/
+.idea/
+*.user
+*.suo
+*.useros
+Thumbs.db
+.DS_Store
+
+## Aspire / local runtime
+.aspire/
+*.log
+
+## Secrets — never commit
+.env
+.env.*
+!.env.example
+credentials.json
+secrets.json
+*.pem
+*.pfx
+appsettings.*.local.json
+
+## Generated / packaged
+*.zip
+infra/main.json
+
+## Capstone load-test output folders
+docs/capstone-01-baseline/
+docs/capstone-01-burst/

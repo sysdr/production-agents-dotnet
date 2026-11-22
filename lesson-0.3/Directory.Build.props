@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Lesson 0.3: a switch that misses a union case is a build error, not a warning. -->
+    <WarningsAsErrors>$(WarningsAsErrors);CS8509</WarningsAsErrors>
+  </PropertyGroup>
+</Project>
